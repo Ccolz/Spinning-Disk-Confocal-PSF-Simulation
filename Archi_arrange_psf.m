@@ -35,7 +35,7 @@ crosstalk_num=size(center_pinhole_coords, 1);
 figure('Color', 'w');
 hold on;
 grid on;
-colors = lines(crosstalk_num); % 生成不同颜色的线条
+colors = lines(crosstalk_num);
 legend_str = cell(crosstalk_num, 1);
 for k=1:crosstalk_num
     crosstalk_pinhole=[];
@@ -45,7 +45,7 @@ for k=1:crosstalk_num
         dist = sqrt((coords(i,1) - current_center(1))^2 + ...
                     (coords(i,2) - current_center(2))^2);
         
-        if dist <= pinhole_d*2*1e9&&dist>1
+        if dist <= 200*r&&dist>1
             dis=[dis,dist];
             crosstalk_pinhole = [crosstalk_pinhole; coords(i,:)];  
         end
@@ -71,13 +71,16 @@ for k=1:crosstalk_num
     end
     mask_start_conv=conv2(mask,mask,"same");
     mask_sum=mask_start_conv;
-    angles = 1:1:360;
+    angles = 1:1:359;
     for a = angles
         mask_rot = imrotate(mask, a, 'bilinear', 'crop');
         mask_conv=conv2(mask_rot,mask_rot,"same");
         mask_sum=mask_sum+mask_conv;
     end
-    mask_avg=mask_sum/length(angles);
+    mask_avg=mask_sum/(length(angles)+1);
+    cutoff_pix = (pinhole_d * 20) / (pixel_size);
+    [X, Y] = meshgrid(1:2*psfWidth, 1:2*psfHeight);
+    mask_avg(sqrt((X-center_x).^2 + (Y-center_y).^2) > cutoff_pix) = 0;
     for depth=1:stack_depth
         psf_exc(:,:,depth)= conv2(psf(:,:,depth) , mask_avg,'same');
     end
@@ -91,10 +94,74 @@ for k=1:crosstalk_num
     
     drawnow;
 end
+d=pinhole_d*5/pixel_size;
+a = d;             
+pinhole_num=200*r/a;        
+maxLayer = pinhole_num;     
 
+e1 = [1, 0];
+e2 = [0.5, sqrt(3)/2];
 
-% figure;
-% imagesc(mask_avg);
-% colormap jet;
-% axis image tight;
-% axis xy;
+local_points = [];
+for n = 0:maxLayer
+    
+    if n == 0
+        local_points = [local_points; 0 0];   
+        continue;
+    end
+    
+    x = n;
+    y = 0;
+    pos = x*e1 + y*e2;
+    
+    dirs = [ 0 -1;   -1 0;   -1 1;  0 1;   1 0;   1 -1 ];
+    
+    for side = 1:6
+        for step = 1:n
+            local_points = [local_points; pos];
+            x = x + dirs(side,1);
+            y = y + dirs(side,2);
+            pos = x*e1 + y*e2;
+        end
+    end
+end
+points = local_points * a ;
+points = unique(points, 'rows');
+simu_center=zeros(length(points),2*psfHeight,2*psfWidth);
+mask_simu=circle_center;
+for i=1:size(points,1)
+    simu_x = center_x + points(i,1);
+    simu_y = center_y + points(i,2);
+    for y = 1:2*psfHeight
+        for x = 1:2*psfWidth
+            distance = sqrt((x - simu_x)^2 + (y - simu_y)^2);
+            if distance <= r
+                simu_center(i,y,x) = 1;
+            end
+        end
+    end
+    mask_simu=mask_simu+squeeze(simu_center(i, :, :));
+end
+mask_simu_conv=conv2(mask_simu,mask_simu,"same");
+mask_simu_sum=mask_simu_conv;
+for a = angles
+    mask_simu_rot = imrotate(mask_simu, a, 'bilinear', 'crop');
+    mask_simu_conv=conv2(mask_simu_rot,mask_simu_rot,"same");
+    mask_simu_sum=mask_simu_sum+mask_simu_conv;
+end
+mask_simu_avg=mask_simu_sum/(length(angles)+1);
+mask_simu_avg(sqrt((X-center_x).^2 + (Y-center_y).^2) > cutoff_pix) = 0;
+for depth=1:stack_depth
+    psf_simu_exc(:,:,depth)= conv2(psf(:,:,depth) , mask_avg,'same');
+end
+psf_simu_overall=psf.*psf_simu_exc;
+for depth=1:stack_depth
+    I_simu_psf(depth)=sum(psf_simu_overall(:,:,depth),"all");
+end
+I_simu_psf=I_simu_psf./max(I_simu_psf);
+plot(1:stack_depth, I_simu_psf, '--', 'Color', [0.5 0.5 0.5], 'LineWidth', 2);
+figure;
+imagesc(mask_simu_avg);
+colormap jet;
+axis image tight;
+axis xy;
