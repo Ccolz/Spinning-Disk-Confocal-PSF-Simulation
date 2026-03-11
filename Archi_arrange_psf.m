@@ -4,7 +4,7 @@ clear;
 position=load("pinhole_coords.mat");
 coords=position.all_coords;
 
-data=load('E:\psf生成\vector_test\vector_test\PSF_10.mat');
+data=load('PSF_10.mat');
 psf=data.data;
 rate=data.paraSim.zemit;
 
@@ -128,7 +128,7 @@ end
 points = local_points * a ;
 points = unique(points, 'rows');
 simu_center=zeros(length(points),2*psfHeight,2*psfWidth);
-mask_simu=circle_center;
+mask_simu=zeros(2*psfHeight, 2*psfWidth);
 for i=1:size(points,1)
     simu_x = center_x + points(i,1);
     simu_y = center_y + points(i,2);
